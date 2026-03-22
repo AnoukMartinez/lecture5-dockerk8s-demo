@@ -1,4 +1,5 @@
 Link for the forked repository - https://github.com/AnoukMartinez/lecture5-dockerk8s-demo
+
 Docker Username - anoukmartinez0
 
 # Lecture 5: Docker & Kubernetes Demo
@@ -703,4 +704,5 @@ As we can see the missing pod gets replaced by another after a short delay.
 ---
 
 *Why is self healing important?*
+
 Self healing is important because we want our application to remain available even when individual pods fail, without requiring manual intervention. When one of our pods dies, Kubernetes should automatically come up with a replacement to maintain the expected number of replicas, so the load can still be evenly distributed. It should be as autonomous and self running as possible.
