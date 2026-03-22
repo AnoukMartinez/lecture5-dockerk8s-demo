@@ -29,6 +29,7 @@ services:
       - DB_PASSWORD=taskpass
       - REDIS_HOST=redis
       - REDIS_PORT=6379
+      - ADMINER_DEFAULT_SERVER=db
     depends_on:
       db:
         condition: service_healthy
@@ -65,6 +66,22 @@ services:
     networks:
       - app-network
     restart: unless-stopped
+
+  # ----------------------------------------------------------
+  # DATABASE UI (Adminer)
+  # ----------------------------------------------------------
+  adminer:
+    image: adminer:latest
+    restart: always
+    ports:
+      - 8080:8080
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_started
+    networks:
+      - app-network
 
   # ----------------------------------------------------------
   # CACHE (Redis)

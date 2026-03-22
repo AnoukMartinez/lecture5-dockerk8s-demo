@@ -443,3 +443,140 @@ flowchart TB
 ---
 
 **University of Bern | DevOps for Cyber-Physical Systems**
+
+---
+
+# Task Documentation
+
+## Task 1: Modify the Docker Setup
+### a) Adding Adminer
+For this task, I added the adminer settings to the `docker-compose.yml` file. I created a new small section titled "Database UI" directly under the Database section, since they are somewhat related, and added all the required settings (image, depends_on, network). I also added the restart always since it's included in the adminer example setup, and it seemed like a good idea to include it to avoid any future issues. I also added the adminer default server variable on top under the other environment variables.
+
+Running this caused no issues and worked right away.
+![Tasks](./assets/tasks_screenshot.png)
+
+### b) Changing Base Image / Rebuilding
+To change the python version, I changed line 12 in the dockerfile:
+
+```
+FROM python:3.11-slim # from this...
+FROM python:3.11-alpine # ...to this
+```
+
+Using `docker compose down` and then `docker compose up` again revealed no change in size for the built repository, so I assumed it just restarted the services without actually touching the python version specified in the docker file. So once again I shut down all services, and then ran `docker compose build --no-cache` command (https://stackoverflow.com/questions/35594987/how-to-force-docker-for-a-clean-build-of-an-image#comment78722162_35595021). This showed a significant change in file size:
+
+- Using python slim: lecture5-dockerk8s-demo-web - 232MB
+- Using python alpine: lecture5-dockerk8s-demo-web - 127MB
+
+## Task 2: Docker Operations
+### a) Image Tagging and Registry
+For this task, I followed the instructions from the assignment 1:1 at first. Using the command `docker build -t task-app:v1.0 .`, I built a local image of the task app. I then signed in with my Docker Account on the Hub. However, when trying to follow a guide on how to push the image, I realized that usually a username is required in the image to link it to the Docker Hub account (https://docs.docker.com/get-started/docker-concepts/building-images/build-tag-and-publish-an-image/). Attempting to use docker push without this (Even after using docker login) on the console resulted in the following error: `failed to authorize: failed to fetch oauth token: Post "https://auth.docker.io/token": context canceled`.
+So I rebuilt the image using the following command, as well as the docker push command afterwards to push the image onto the Docker Hub.
+- `docker build -t anoukmartinez0/task-app:v1.0 .`
+- `docker push anoukmartinez0/task-app:v1.0 `
+
+This worked (https://hub.docker.com/repository/docker/anoukmartinez0/task-app/general).
+![Docker Hub](./assets/hub_screenshot.png)
+
+### b) Container Inspection
+Running the given commands resulted in the following outputs.
+- `docker compose logs web`
+    ```
+    lecture5-web  | Database initialized successfully!
+    lecture5-web  |  * Serving Flask app 'app'
+    lecture5-web  |  * Debug mode: on
+    lecture5-web  | WARNING: This is a development server. Do not use it in a production deployment. Use a production WSGI server instead.
+    lecture5-web  |  * Running on all addresses (0.0.0.0)
+    lecture5-web  |  * Running on http://127.0.0.1:5000
+    lecture5-web  |  * Running on http://172.19.0.5:5000
+    lecture5-web  | Press CTRL+C to quit
+    lecture5-web  |  * Restarting with stat
+    lecture5-web  |  * Debugger is active!
+    lecture5-web  |  * Debugger PIN: 110-254-778
+    ```
+
+    This seems to display all the log outputs from the application itself (Independent of docker). Above we can see the typical output for running a Flask server in development mode.
+
+- `docker inspect lecture5-web` (I shortened this one since it was quite long)
+    ```
+    PS C:\Users\loveo\Documents\UNIFR\DevOp\lecture5-dockerk8s-demo> docker inspect lecture5-web
+    [
+        {
+            "Id": "d03063f94e178da33e33a2faa6932294a10f17ef0d224e4e23fd0ac066f5e536",
+            "Created": "2026-03-22T14:19:11.344835716Z",
+            "Path": "python",
+            "Args": [
+                "app.py"
+            ],
+            "State": {
+                "Status": "running",
+                "Running": true,
+                ...
+            },
+            "Image": "sha256:6209cc13cdb2a6e2da9674ccfeedb84d67d5b2bd3a4bf324eac293d089ed53b9",
+            ...
+            "Name": "/lecture5-web",
+            "RestartCount": 0,
+            "Driver": "overlayfs",
+            "Platform": "linux",
+            "MountLabel": "",
+            "ProcessLabel": "",
+            "AppArmorProfile": "",
+            "ExecIDs": null,
+            "HostConfig": {
+                ...
+            "GraphDriver": {
+                ...
+            },
+            "Mounts": [
+                {
+                    "Type": "bind",
+                    "Source": "C:\\Users\\loveo\\Documents\\UNIFR\\DevOp\\lecture5-dockerk8s-demo\\app.py",
+                    "Destination": "/app/app.py",
+                    "Mode": "ro",
+                    "RW": false,
+                    "Propagation": "rprivate"
+                },
+                ...
+            ],
+            "Config": {
+                "Hostname": "d03063f94e17",
+                "Domainname": "",
+                ...
+            },
+            "NetworkSettings": {
+                "Bridge": "",
+                "SandboxID": "b61c4fc34bce53173afb23121d3cd74f2ec1a2217d907c25097a3cd23b6c4fc9",
+                "SandboxKey": "/var/run/docker/netns/b61c4fc34bce",
+                "Ports": {
+                    "5000/tcp": [
+                        {
+                            "HostIp": "0.0.0.0",
+                            "HostPort": "5000"
+                        },
+                        {
+                            "HostIp": "::",
+                            "HostPort": "5000"
+                        }
+                    ]
+                },
+                ...
+        }
+    ]
+    ```
+    This seems to be giving a detailed overview over the application/containers running, such as information about the machine running the services, the image, network settings and more.
+- `docker stats`
+    ```
+    CONTAINER ID   NAME                                CPU %     MEM USAGE / LIMIT     MEM %     NET I/O           BLOCK I/O        PIDS
+    5844d985dc2a   lecture5-dockerk8s-demo-adminer-1   0.00%     8.344MiB / 7.718GiB   0.11%     1.04kB / 126B     2.25MB / 0B      1
+    d03063f94e17   lecture5-web                        0.17%     56.66MiB / 7.718GiB   0.72%     3.96kB / 3.45kB   11.7MB / 311kB   3
+    d3086f98b786   lecture5-db                         0.00%     21.46MiB / 7.718GiB   0.27%     5.36kB / 3.09kB   38MB / 610kB     6
+    e09f1525daac   lecture5-redis                      0.34%     4.961MiB / 7.718GiB   0.06%     2.12kB / 126B     18.6MB / 0B      6
+    ```
+    This seems to append a small output in the console that updates live every second, giving information about how much CPU/memory usage each service consumes on the machine running. We can see for instance the consumption for the web service, database and redis seperately above.
+
+## Task 3: Deploy to Kubernetes
+### a) Deploying the application
+
+
+
