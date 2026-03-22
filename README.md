@@ -1,3 +1,6 @@
+Link for the forked repository - https://github.com/AnoukMartinez/lecture5-dockerk8s-demo
+Docker Username - anoukmartinez0
+
 # Lecture 5: Docker & Kubernetes Demo
 
 > DevOps for Cyber-Physical Systems | University of Bern
@@ -577,6 +580,127 @@ Running the given commands resulted in the following outputs.
 
 ## Task 3: Deploy to Kubernetes
 ### a) Deploying the application
+For this, I installed minikube and ran `minikube start`. At first this failed because minikube attempted to use my VirtualBox Driver for some reason. I fixed this by starting over and running `minikube start --driver=docker`. This worked with no issue.
 
+Rebuilding the webapp and replacing the username in `k8s-web.yaml` was also no issue (https://hub.docker.com/repository/docker/anoukmartinez0/lecture5-webapp/general). I had to push the image twice here since I forgot to replace the username at first.
 
+Accessing the webapp after this was also no problem.
+![Pods](./assets/getpods_screenshot.png)
+![Webapp](./assets/webapp_screenshot.png)
 
+### b) Scale and Test Load Balancing
+One small thing I had to change for this to work is using a double dash for the replicas flag and seperating the deployment from the appname via a slash. I found this out via the Kubernetes documentation in the section "Scaling a Deployment" (https://kubernetes.io/docs/concepts/workloads/controllers/deployment/).
+The correct command looks as follows:
+```
+PS C:\Users\loveo\Documents\UNIFR\DevOp\lecture5-dockerk8s-demo> kubectl scale deployment lecture5-web --replicas=5       
+deployment.apps/lecture5-web scaled
+```
+
+The load balancing test script ran just fine, but for some reason it wasn't able to establish a connection with the webapp. 
+```
+PS C:\Users\loveo\Documents\UNIFR\DevOp\lecture5-dockerk8s-demo> python test_load_balancing.py
+🚀 Testing load balancing across pods...
+📍 Service URL: http://127.0.0.1:63501/info
+🔄 Making 20 requests...
+
+Request  1: Failed - HTTPConnectionPool(host='127.0.0.1', port=63501): Max retries exceeded with url: /info (Caused by NewConnectionError('<urllib3.connection.HTTPConnection object at 0x000002428B8341A0>: Failed to establish a new connection: [WinError 10061] Es konnte keine Verbindung hergestellt werden, da der Zielcomputer die Verbindung verweigerte'))
+```
+
+Using `kubectl get service lecture5-web-service`, I noticed that the service seemingly runs on another port than expected from the python script.
+```
+NAME                   TYPE           CLUSTER-IP     EXTERNAL-IP   PORT(S)        AGE
+lecture5-web-service   LoadBalancer   10.103.95.21   127.0.0.1     80:30205/TCP   38m
+```
+
+Upon further inspection, I found that the port for the load balancing is specified to 80 in the ``k8s-web.yaml` file. So I changed the port in the script to 80 for now. This resulted in the script working as intended, but for some reason all the requests were still handled by the same node.
+![Balancing](./assets/loadbalancing_screenshot.png)
+
+Upon further inspection, I noticed that in the script, it assumes that the response from our webapp includes a field "pod_name", but when accessing the /info route, this doesn't seem to be included in the response. I checked the app.py and saw that the pod_name should theoretically be included in the response, but that's not the case in practice.
+
+```
+@app.route('/info')
+def info():
+    """Show environment info - demonstrates Docker env vars"""
+    return jsonify({
+        'app': 'DevOps Lecture 5 Demo',
+        'version': '1.0.0',
+        'pod_name': socket.gethostname(), <-- here fills it
+        'environment': {
+            'DB_HOST': DB_HOST,
+            'DB_PORT': DB_PORT,
+            'DB_NAME': DB_NAME,
+            'REDIS_HOST': REDIS_HOST,
+            'REDIS_PORT': REDIS_PORT
+        },
+        'message': 'Configuration from environment variables!'
+    })
+```
+```
+    pod_name = data.get('pod_name', 'unknown') <-- tries accessing or put unknown (the case for me)
+    pod_responses.append(pod_name)
+```
+```
+{
+  "app": "DevOps Lecture 5 Demo",
+  "environment": {
+    "DB_HOST": "db",
+    "DB_NAME": "taskdb",
+    "DB_PORT": "5432",
+    "REDIS_HOST": "redis",
+    "REDIS_PORT": 6379
+  },
+  "message": "Configuration from environment variables!",
+  "version": "1.0.0"
+}
+
+...Missing the pod field?
+```
+
+I decided to just quit all the minikube services/pods and rebuild the image at this point. Here's all the commands I ran for this:
+```
+kubectl delete -f k8s-web.yaml
+kubectl delete -f k8s-backend.yaml
+minikube stop
+minikube delete
+```
+I then reran the instructions from the worksheet.
+This time around, the script worked fine apart from one little change, being that I had to run `minikube tunnel` (https://minikube.sigs.k8s.io/docs/handbook/accessing/) in another terminal. Otherwise the same issue with the request being rejected occurs again.
+This appears to be a necessary step anyway (See section LoadBalancer access/Example of a Load Balancer).
+
+The Python script now runs fine and produces some better results compared to before!
+![Balancing Fixed](./assets/loadbalancing_fixed_screenshot.png)
+
+---
+
+*So how does Kubernetes distribute traffic?*
+
+Kubernetes distributes traffic through "kube-proxy" (https://kubernetes.io/docs/reference/command-line-tools-reference/kube-proxy/), which sets up iptables rules for each node. Per default this uses a random selection of nodes with the same probability, which in practice works somewhat like a round robin approach for a large number of requests. I am guessing since we only test 20 requests in the script, two of the nodes just got "lucky" by getting 7 requests each in the test run, while another only got 1 request by sheer luck. We can see this in practice as well by just rerunning the python script, which will result in a slightly different distribution of the requests handled each time.
+```
+lecture5-web-6c9c754fc8-wwf9g:  7 requests ( 35.0%) ███████
+lecture5-web-6c9c754fc8-m8w6q:  7 requests ( 35.0%) ███████
+lecture5-web-6c9c754fc8-nj2k5:  3 requests ( 15.0%) ███
+lecture5-web-6c9c754fc8-2c6tf:  2 requests ( 10.0%) ██
+lecture5-web-6c9c754fc8-dj7fw:  1 requests (  5.0%) █
+```
+```
+lecture5-web-6c9c754fc8-nj2k5:  7 requests ( 35.0%) ███████
+lecture5-web-6c9c754fc8-2c6tf:  4 requests ( 20.0%) ████
+lecture5-web-6c9c754fc8-dj7fw:  3 requests ( 15.0%) ███
+lecture5-web-6c9c754fc8-wwf9g:  3 requests ( 15.0%) ███
+lecture5-web-6c9c754fc8-m8w6q:  3 requests ( 15.0%) ███
+```
+
+### c) Self Healing
+Before
+![Balancing Fixed](./assets/podsbefore_screenshot.png)
+During
+![Balancing Fixed](./assets/podsduring_screenshot.png)
+After
+![Balancing Fixed](./assets/podsafter_screenshot.png)
+
+As we can see the missing pod gets replaced by another after a short delay.
+
+---
+
+*Why is self healing important?*
+Self healing is important because we want our application to remain available even when individual pods fail, without requiring manual intervention. When one of our pods dies, Kubernetes should automatically come up with a replacement to maintain the expected number of replicas, so the load can still be evenly distributed. It should be as autonomous and self running as possible.
